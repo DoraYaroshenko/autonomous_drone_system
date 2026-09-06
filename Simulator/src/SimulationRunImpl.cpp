@@ -75,7 +75,9 @@ types::SimulationResult SimulationRunImpl::run() {
         types::MissionRunResult mission_result = mission_control_->runMission();
         result.mission_results.push_back(std::move(mission_result));
     } catch (const std::exception& e) {
-        std::ofstream err_file(output_map_file_.parent_path() / "error_log.txt", std::ios::app);
+        std::filesystem::path err_path = output_map_file_;
+        err_path.replace_extension(".error");
+        std::ofstream err_file(err_path, std::ios::app);
         if (err_file) {
             err_file << "Mission Exception: " << e.what() << "\n";
         }
@@ -92,7 +94,9 @@ types::SimulationResult SimulationRunImpl::run() {
         std::vector<double> scores = MapsComparison::compare(*hidden_map_, targets);
         result.mission_score = scores.empty() ? -1.0 : scores[0];
     } catch (const std::exception& e) {
-        std::ofstream err_file(output_map_file_.parent_path() / "error_log.txt", std::ios::app);
+        std::filesystem::path err_path = output_map_file_;
+        err_path.replace_extension(".error");
+        std::ofstream err_file(err_path, std::ios::app);
         if (err_file) {
             err_file << "MapsComparison Exception: " << e.what() << "\n";
         }
@@ -108,6 +112,17 @@ types::SimulationResult SimulationRunImpl::run() {
 
     // Store output map config.
     result.output_map_config = output_map_->getMapConfig();
+
+    try {
+        output_map_->save(output_map_file_);
+    } catch (const std::exception& e) {
+        std::filesystem::path err_path = output_map_file_;
+        err_path.replace_extension(".error");
+        std::ofstream err_file(err_path, std::ios::app);
+        if (err_file) {
+            err_file << "Failed to save output map: " << e.what() << "\n";
+        }
+    }
 
     return result;
 }

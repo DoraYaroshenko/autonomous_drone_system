@@ -69,10 +69,13 @@ ParsedArgs parse_arguments(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "-comparative") {
+            if (parsed.is_comparative) unsupported_args.push_back(arg);
             parsed.is_comparative = true;
         } else if (arg == "-competition") {
+            if (parsed.is_competition) unsupported_args.push_back(arg);
             parsed.is_competition = true;
         } else if (arg == "-verbose") {
+            if (parsed.is_verbose) unsupported_args.push_back(arg);
             parsed.is_verbose = true;
         } else {
             auto pos = arg.find('=');
@@ -83,7 +86,11 @@ ParsedArgs parse_arguments(int argc, char** argv) {
                 if (key == "simulation" || key == "mission_control_folder" || 
                     key == "algorithm" || key == "mission_control" || 
                     key == "algorithms_folder" || key == "num_threads") {
-                    parsed.raw_args[key] = value;
+                    if (parsed.raw_args.find(key) != parsed.raw_args.end()) {
+                        unsupported_args.push_back("Duplicate arg: " + key);
+                    } else {
+                        parsed.raw_args[key] = value;
+                    }
                 } else {
                     unsupported_args.push_back(arg);
                 }
@@ -118,13 +125,21 @@ ParsedArgs parse_arguments(int argc, char** argv) {
 
     if (parsed.raw_args.find("num_threads") != parsed.raw_args.end()) {
         try {
-            parsed.num_threads = std::stoi(parsed.raw_args["num_threads"]);
+            size_t pos = 0;
+            int num = std::stoi(parsed.raw_args["num_threads"], &pos);
+            if (pos != parsed.raw_args["num_threads"].size() || num < 1) {
+                print_usage_and_exit("Invalid value for num_threads: " + parsed.raw_args["num_threads"]);
+            }
+            parsed.num_threads = num;
         } catch (...) {
             print_usage_and_exit("Invalid value for num_threads: " + parsed.raw_args["num_threads"]);
         }
     }
 
     if (parsed.is_comparative) {
+        if (parsed.raw_args.count("mission_control") || parsed.raw_args.count("algorithms_folder")) {
+            print_usage_and_exit("Unsupported arguments for comparative mode.");
+        }
         if (parsed.raw_args.find("mission_control_folder") == parsed.raw_args.end()) print_usage_and_exit("Missing mandatory argument for comparative mode: mission_control_folder=<...>");
         if (parsed.raw_args.find("algorithm") == parsed.raw_args.end()) print_usage_and_exit("Missing mandatory argument for comparative mode: algorithm=<...>");
 
@@ -150,6 +165,9 @@ ParsedArgs parse_arguments(int argc, char** argv) {
         
         parsed.output_base_dir = mc_folder / ("comparative_results_" + user_common_330371063_324976703::TimeUtils::generate_folder_timestamp());
     } else {
+        if (parsed.raw_args.count("mission_control_folder") || parsed.raw_args.count("algorithm")) {
+            print_usage_and_exit("Unsupported arguments for competition mode.");
+        }
         if (parsed.raw_args.find("algorithms_folder") == parsed.raw_args.end()) print_usage_and_exit("Missing mandatory argument for competition mode: algorithms_folder=<...>");
         if (parsed.raw_args.find("mission_control") == parsed.raw_args.end()) print_usage_and_exit("Missing mandatory argument for competition mode: mission_control=<...>");
 
@@ -183,16 +201,25 @@ void load_comparative_plugins(simulator::PluginLoader& loader,
                               const ParsedArgs& parsed_args, 
                               std::vector<PluginRun>& plugin_runs, 
                               std::vector<std::string>& failed_plugins) {
-    loader.loadLibrary(parsed_args.algo_plugins_to_load[0]);
+    try {
+        loader.loadLibrary(parsed_args.algo_plugins_to_load[0]);
+    } catch (const std::exception& e) {
+        print_usage_and_exit(std::string("Failed to load algorithm library: ") + e.what());
+    }
     auto algoFactories = simulator::MappingAlgorithmRegistrar::getInstance().getFactories();
     std::string algo_name = std::filesystem::path(parsed_args.algo_plugins_to_load[0]).filename().stem().string();
     if (algoFactories.empty()) {
-        std::ofstream err_file(parsed_args.output_base_dir / "error_log.txt", std::ios::app); //write at the end of the file
-        if (err_file) err_file << "Failed to register algorithm: " << algo_name << std::endl;
         print_usage_and_exit("Algorithm failed to register.");
     }
     auto algoFactory = algoFactories[0];
     simulator::MappingAlgorithmRegistrar::getInstance().clear();
+    
+    try {
+        std::filesystem::create_directories(parsed_args.output_base_dir);
+        std::ofstream(parsed_args.output_base_dir / "error_log.txt");
+    } catch (const std::exception& e) {
+        print_usage_and_exit("Failed to create output directory: " + parsed_args.output_base_dir.string() + " - " + e.what());
+    }
     
     std::atomic<size_t> next_plugin{0};
     std::mutex out_mtx;
@@ -205,31 +232,42 @@ void load_comparative_plugins(simulator::PluginLoader& loader,
             if (idx >= parsed_args.mc_plugins_to_load.size()) break;
             
             const auto& mc_path = parsed_args.mc_plugins_to_load[idx];
-            loader.loadLibrary(mc_path);
-            auto mcFactories = simulator::MissionControlRegistrar::getInstance().getFactories();
             std::string mc_name = std::filesystem::path(mc_path).filename().stem().string();
+            std::string mc_filename = std::filesystem::path(mc_path).filename().string();
+            
+            try {
+                loader.loadLibrary(mc_path);
+            } catch (const std::exception& e) {
+                std::cerr << "Warning: Mission Control " << mc_path << " failed to load: " << e.what() << "\n";
+                {
+                    std::lock_guard<std::mutex> lock(out_mtx);
+                    std::ofstream err_file(parsed_args.output_base_dir / "error_log.txt", std::ios::app);
+                    if (err_file) err_file << "Failed to load mission control: " << mc_filename << std::endl;
+                }
+                local_failed.push_back(mc_filename);
+                continue;
+            }
+            
+            auto mcFactories = simulator::MissionControlRegistrar::getInstance().getFactories();
             if (mcFactories.empty()) {
                 std::cerr << "Warning: Mission Control " << mc_path << " failed to register.\n";
                 {
                     std::lock_guard<std::mutex> lock(out_mtx);
                     std::ofstream err_file(parsed_args.output_base_dir / "error_log.txt", std::ios::app);
-                    if (err_file) err_file << "Failed to register mission control: " << mc_name << std::endl;
+                    if (err_file) err_file << "Failed to register mission control: " << mc_filename << std::endl;
                 }
-                local_failed.push_back(mc_name);
+                local_failed.push_back(mc_filename);
                 simulator::MissionControlRegistrar::getInstance().clear();
                 continue;
             }
             auto mcFactory = mcFactories[0];
             simulator::MissionControlRegistrar::getInstance().clear(); //in registrar the key is thread_id and the value is the factories of the libraries it loaded
             
-            std::filesystem::path run_out_dir = parsed_args.output_base_dir / mc_name;
-            std::filesystem::create_directories(run_out_dir);
-
             local_runs.push_back({
                 mc_name,
                 std::make_unique<simulator::SimulationRunFactoryImpl>(algoFactory, mcFactory, parsed_args.is_verbose),
                 {},
-                run_out_dir
+                parsed_args.output_base_dir
             });
         }
         std::lock_guard<std::mutex> lock(out_mtx); //unlocks automatically when worker ends
@@ -252,16 +290,25 @@ void load_competition_plugins(simulator::PluginLoader& loader,
                               const ParsedArgs& parsed_args, 
                               std::vector<PluginRun>& plugin_runs, 
                               std::vector<std::string>& failed_plugins) {
-    loader.loadLibrary(parsed_args.mc_plugins_to_load[0]);
+    try {
+        loader.loadLibrary(parsed_args.mc_plugins_to_load[0]);
+    } catch (const std::exception& e) {
+        print_usage_and_exit(std::string("Failed to load mission control library: ") + e.what());
+    }
     auto mcFactories = simulator::MissionControlRegistrar::getInstance().getFactories();
     std::string mc_name = std::filesystem::path(parsed_args.mc_plugins_to_load[0]).filename().stem().string();
     if (mcFactories.empty()) {
-        std::ofstream err_file(parsed_args.output_base_dir / "error_log.txt", std::ios::app);
-        if (err_file) err_file << "Failed to register mission control: " << mc_name << std::endl;
         print_usage_and_exit("Mission Control failed to register.");
     }
     auto mcFactory = mcFactories[0];
     simulator::MissionControlRegistrar::getInstance().clear();
+    
+    try {
+        std::filesystem::create_directories(parsed_args.output_base_dir);
+        std::ofstream(parsed_args.output_base_dir / "error_log.txt");
+    } catch (const std::exception& e) {
+        print_usage_and_exit("Failed to create output directory: " + parsed_args.output_base_dir.string() + " - " + e.what());
+    }
     
     std::atomic<size_t> next_plugin{0};
     std::mutex out_mtx;
@@ -274,31 +321,42 @@ void load_competition_plugins(simulator::PluginLoader& loader,
             if (idx >= parsed_args.algo_plugins_to_load.size()) break; //the loop ends when there are no more plugins to load
             
             const auto& algo_path = parsed_args.algo_plugins_to_load[idx];
-            loader.loadLibrary(algo_path);
-            auto algoFactories = simulator::MappingAlgorithmRegistrar::getInstance().getFactories();
             std::string algo_name = std::filesystem::path(algo_path).filename().stem().string();
+            std::string algo_filename = std::filesystem::path(algo_path).filename().string();
+            
+            try {
+                loader.loadLibrary(algo_path);
+            } catch (const std::exception& e) {
+                std::cerr << "Warning: Algorithm " << algo_path << " failed to load: " << e.what() << "\n";
+                {
+                    std::lock_guard<std::mutex> lock(out_mtx);
+                    std::ofstream err_file(parsed_args.output_base_dir / "error_log.txt", std::ios::app);
+                    if (err_file) err_file << "Failed to load algorithm: " << algo_filename << std::endl;
+                }
+                local_failed.push_back(algo_filename);
+                continue;
+            }
+            
+            auto algoFactories = simulator::MappingAlgorithmRegistrar::getInstance().getFactories();
             if (algoFactories.empty()) {
                 std::cerr << "Warning: Algorithm " << algo_path << " failed to register.\n";
                 {
                     std::lock_guard<std::mutex> lock(out_mtx);
                     std::ofstream err_file(parsed_args.output_base_dir / "error_log.txt", std::ios::app);
-                    if (err_file) err_file << "Failed to register algorithm: " << algo_name << std::endl;
+                    if (err_file) err_file << "Failed to register algorithm: " << algo_filename << std::endl;
                 }
-                local_failed.push_back(algo_name);
+                local_failed.push_back(algo_filename);
                 simulator::MappingAlgorithmRegistrar::getInstance().clear();
                 continue;
             }
             auto algoFactory = algoFactories[0];
             simulator::MappingAlgorithmRegistrar::getInstance().clear();
             
-            std::filesystem::path run_out_dir = parsed_args.output_base_dir / algo_name;
-            std::filesystem::create_directories(run_out_dir);
-
             local_runs.push_back({
                 algo_name,
                 std::make_unique<simulator::SimulationRunFactoryImpl>(algoFactory, mcFactory, parsed_args.is_verbose),
                 {},
-                run_out_dir
+                parsed_args.output_base_dir
             });
         }
         std::lock_guard<std::mutex> lock(out_mtx);
@@ -318,15 +376,37 @@ void load_competition_plugins(simulator::PluginLoader& loader,
 }
 
 std::vector<GlobalRunTask> generate_global_tasks(std::vector<PluginRun>& plugin_runs, 
-                                                 const simulator::types::SimulationCompositionData& composition) {
+                                                 const simulator::types::SimulationCompositionData& composition,
+                                                 const YAML::Node& config) {
     std::vector<GlobalRunTask> global_tasks;
+    YAML::Node comp_yaml = config["simulation_compositions"];
+    
     for (auto& pr : plugin_runs) {
         size_t run_index = 0;
+        
+        size_t sim_idx = 0;
         for (const auto& [simulation, missions] : composition.simulation_mission_groups) {
+            auto sim_node = comp_yaml["simulations"][sim_idx++];
+            std::string sim_name = std::filesystem::path(sim_node["simulation_config"].as<std::string>()).stem().string();
+            
+            size_t mission_idx = 0;
             for (const auto& mission : missions) {
+                auto mission_node = sim_node["mission_configs"][mission_idx++];
+                std::string mission_name = std::filesystem::path(mission_node.as<std::string>()).stem().string();
+                
+                size_t drone_idx = 0;
                 for (const auto& drone : composition.drone_configs) {
+                    auto drone_node = comp_yaml["drone_configs"][drone_idx++];
+                    std::string drone_name = std::filesystem::path(drone_node.as<std::string>()).stem().string();
+                    
+                    size_t lidar_idx = 0;
                     for (const auto& lidar : composition.lidar_configs) {
-                        std::filesystem::path run_output = pr.run_out_dir / ("run_" + std::to_string(run_index));
+                        auto lidar_node = comp_yaml["lidar_configs"][lidar_idx++];
+                        std::string lidar_name = std::filesystem::path(lidar_node.as<std::string>()).stem().string();
+                        
+                        std::string unique_name = pr.plugin_name + "_" + sim_name + "_" + mission_name + "_" + drone_name + "_" + lidar_name + ".npy";
+                        std::filesystem::path run_output = pr.run_out_dir / unique_name;
+                        
                         global_tasks.push_back({&pr, run_index, &simulation, &mission, &drone, &lidar, run_output});
                         run_index++;
                     }
@@ -346,13 +426,14 @@ void execute_tasks(std::vector<GlobalRunTask>& global_tasks, int num_threads) {
             if (idx >= global_tasks.size()) break;
 
             const auto& task = global_tasks[idx];
-            std::filesystem::create_directories(task.run_output);
             try {
                 std::unique_ptr<simulator::ISimulationRun> sim_run = 
-                    task.plugin_run->factory->create(*(task.simulation), *(task.mission), *(task.drone), *(task.lidar), task.run_output / "output_map.npy");
+                    task.plugin_run->factory->create(*(task.simulation), *(task.mission), *(task.drone), *(task.lidar), task.run_output);
                 task.plugin_run->results[task.result_index] = sim_run->run();
             } catch (const std::exception& e) {
-                std::ofstream err_file(task.run_output / "error_log.txt", std::ios::app);
+                std::filesystem::path err_path = task.run_output;
+                err_path.replace_extension(".error");
+                std::ofstream err_file(err_path);
                 if (err_file) {
                     err_file << "Simulation Run Error: " << e.what() << "\n";
                 }
@@ -415,12 +496,6 @@ void generate_reports(std::vector<PluginRun>& plugin_runs,
 int main(int argc, char** argv) {
     ParsedArgs parsed_args = parse_arguments(argc, argv);
 
-    try {
-        std::filesystem::create_directories(parsed_args.output_base_dir);
-    } catch (const std::exception& e) {
-        print_usage_and_exit("Failed to create output directory: " + parsed_args.output_base_dir.string() + " - " + e.what());
-    }
-
     simulator::types::SimulationCompositionData composition;
     try {
         composition = simulator::YamlParserUtils::parseCompositions(parsed_args.sim_path);
@@ -449,7 +524,7 @@ int main(int argc, char** argv) {
         load_competition_plugins(loader, parsed_args, plugin_runs, failed_plugins);
     }
 
-    std::vector<GlobalRunTask> global_tasks = generate_global_tasks(plugin_runs, composition);
+    std::vector<GlobalRunTask> global_tasks = generate_global_tasks(plugin_runs, composition, config);
     execute_tasks(global_tasks, parsed_args.num_threads);
     generate_reports(plugin_runs, composition, config, parsed_args, failed_plugins);
     

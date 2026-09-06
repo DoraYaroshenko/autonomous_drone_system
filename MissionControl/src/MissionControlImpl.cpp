@@ -27,8 +27,8 @@ MissionControlImpl_330371063_324976703::MissionControlImpl_330371063_324976703(c
 }
 
 void MissionControlImpl_330371063_324976703::recordError(const std::string& errorCode, const std::string& message, common::types::MissionRunResult& result, const std::string& logMessage) const {
-    std::filesystem::path error_log_path = output_map_file_.parent_path() / "error_log.txt";
-    std::filesystem::create_directories(output_map_file_.parent_path());
+    std::filesystem::path error_log_path = output_map_file_;
+    error_log_path.replace_extension(".error");
     std::ofstream error_log(error_log_path, std::ios::app);
     if (error_log) {
         error_log << logMessage << "\n";
@@ -111,7 +111,7 @@ common::types::MissionRunResult MissionControlImpl_330371063_324976703::runMissi
 
     // Initialize the logger for this mission run if verbose
     if (verbose_) {
-        Logger::init((output_map_file_.parent_path() / "drone_logs.jsonl").string());
+        Logger::init((output_map_file_.parent_path() / (output_map_file_.stem().string() + "_drone_logs.jsonl")).string());
     }
 
     executeMissionLoop(result);

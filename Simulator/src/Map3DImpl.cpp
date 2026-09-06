@@ -196,26 +196,29 @@ void Map3DImpl::save(const std::filesystem::path& path) const { //saves the map 
     }
 
     std::size_t total = shape[0] * shape[1] * shape[2];
-
-    // Always save as int32 (same as ex1's exportMapData).
-    std::vector<int> data(total);
-    if (map_->ValueType() == typeid(std::int8_t)) {
+    std::vector<char> data(total);
+    if (map_->ValueType() == typeid(char)) {
+        const auto* src = map_->Data<char>();
+        std::copy(src, src + total, data.begin());
+    } else if (map_->ValueType() == typeid(std::int8_t)) {
         const auto* src = map_->Data<std::int8_t>();
         for (std::size_t i = 0; i < total; ++i) {
-            data[i] = static_cast<int>(src[i]);
+            data[i] = static_cast<char>(src[i]);
         }
     } else if (map_->ValueType() == typeid(std::uint8_t)) {
         const auto* src = map_->Data<std::uint8_t>();
         for (std::size_t i = 0; i < total; ++i) {
-            data[i] = static_cast<int>(src[i]);
+            data[i] = static_cast<char>(src[i]);
         }
     } else if (map_->ValueType() == typeid(int)) {
         const auto* src = map_->Data<int>();
-        std::copy(src, src + total, data.begin());
+        for (std::size_t i = 0; i < total; ++i) {
+            data[i] = static_cast<char>(src[i]);
+        }
     }
 
     std::vector<std::size_t> save_shape = {shape[0], shape[1], shape[2]};
-    const char* err = NpyArray::SaveNPY<int>(path.string(), data, save_shape, false);
+    const char* err = NpyArray::SaveNPY<char>(path.string(), data, save_shape, false);
     if (err != nullptr) {
         throw std::runtime_error(std::string("Failed to save NPY file: ") + err);
     }

@@ -31,9 +31,17 @@ common::Position3D OrientationUtils::pointAlongBeam(const common::Position3D& or
 
 common::Orientation OrientationUtils::addOrientations(const common::Orientation& a, 
                                                       const common::Orientation& b) {
+    auto normalize_angle = [](double angle) {
+        double normalized = std::fmod(angle, 360.0);
+        if (normalized < 0.0) {
+            normalized += 360.0;
+        }
+        return normalized;
+    };
+
     return common::Orientation{
-        a.horizontal + b.horizontal,
-        a.altitude + b.altitude
+        HorizontalAngle{normalize_angle((a.horizontal + b.horizontal).numerical_value_in(deg)) * deg},
+        AltitudeAngle{normalize_angle((a.altitude + b.altitude).numerical_value_in(deg)) * deg}
     };
 }
 

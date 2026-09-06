@@ -50,7 +50,7 @@ namespace {
         YAML::Node mc = config["mission_config"];
 
         common::types::MissionConfigData mission;
-        mission.max_steps = get_with_check<std::size_t>(mc, "max_steps", 2500, [](const std::size_t& v){ return v > 0; }, "max_steps must be > 0");
+        mission.max_steps = get_with_check<std::size_t>(mc, "max_steps", 2500, [](const std::size_t& v){ return true; }, "");
         mission.gps_resolution = get_with_check<double>(mc, "gps_resolution_cm", 1.0, [](const double& v){ return v > 0.0; }, "gps_resolution_cm must be > 0") * cm;
         mission.output_mapping_resolution_factor = get_with_default<double>(mc, "output_mapping_resolution_factor", 1.0);
 
@@ -131,8 +131,14 @@ types::SimulationCompositionData YamlParserUtils::parseCompositions(const std::f
 
     std::filesystem::path base_dir = sim_path.parent_path();
     
-    if (!config["simulation_compositions"]) return composition;
+    if (config.IsNull() || !config["simulation_compositions"]) {
+        throw std::invalid_argument("Missing simulation_compositions key");
+    }
     YAML::Node comp_yaml = config["simulation_compositions"];
+    
+    if (!comp_yaml["simulations"]) throw std::invalid_argument("Missing simulations");
+    if (!comp_yaml["drone_configs"]) throw std::invalid_argument("Missing drone_configs");
+    if (!comp_yaml["lidar_configs"]) throw std::invalid_argument("Missing lidar_configs");
     
     if (comp_yaml["simulations"]) {
         for (const auto& sim_node : comp_yaml["simulations"]) {
@@ -226,13 +232,20 @@ void YamlParserUtils::writeComparativeReport(
 
         double total_score = 0.0;
         int total_steps = 0;
+        bool all_failed = true;
         for (const auto& run : report.runs) {
             if (run.mission_score != -1.0) {
                 total_score += run.mission_score;
                 if (!run.mission_results.empty()) {
                     total_steps += run.mission_results.front().steps;
                 }
+                all_failed = false;
             }
+        }
+
+        if (all_failed) {
+            all_failed_plugins.push_back(mc_name + ".so");
+            continue;
         }
 
         bool found = false;
@@ -268,14 +281,12 @@ void YamlParserUtils::writeComparativeReport(
     }
     out << YAML::EndSeq;
 
-    if (!all_failed_plugins.empty()) {
-        out << YAML::Key << "errors";
-        out << YAML::Flow << YAML::BeginSeq;
-        for (const auto& plugin : all_failed_plugins) {
-            out << plugin;
-        }
-        out << YAML::EndSeq;
+    out << YAML::Key << "errors";
+    YAML::Node errors_node(YAML::NodeType::Sequence);
+    for (const auto& plugin : all_failed_plugins) {
+        errors_node.push_back(plugin);
     }
+    out << YAML::Flow << errors_node;
 
     out << YAML::EndMap;
     out << YAML::EndMap;
@@ -320,15 +331,22 @@ void YamlParserUtils::writeCompetitiveReport(
 
         double total_score = 0.0;
         int total_steps = 0;
+        bool all_failed = true;
         for (const auto& run : report.runs) {
             if (run.mission_score != -1.0) {
                 total_score += run.mission_score;
                 if (!run.mission_results.empty()) {
                     total_steps += run.mission_results.front().steps;
                 }
+                all_failed = false;
             }
         }
-        algo_results.push_back({algo_name + ".so", total_score, total_steps});
+        
+        if (all_failed) {
+            all_failed_plugins.push_back(algo_name + ".so");
+        } else {
+            algo_results.push_back({algo_name + ".so", total_score, total_steps});
+        }
     }
 
     std::sort(algo_results.begin(), algo_results.end(), [](const AlgoResult& a, const AlgoResult& b) {
@@ -349,14 +367,12 @@ void YamlParserUtils::writeCompetitiveReport(
     }
     out << YAML::EndSeq;
 
-    if (!all_failed_plugins.empty()) {
-        out << YAML::Key << "errors";
-        out << YAML::Flow << YAML::BeginSeq;
-        for (const auto& plugin : all_failed_plugins) {
-            out << (plugin + ".so");
-        }
-        out << YAML::EndSeq;
+    out << YAML::Key << "errors";
+    YAML::Node errors_node(YAML::NodeType::Sequence);
+    for (const auto& plugin : all_failed_plugins) {
+        errors_node.push_back(plugin);
     }
+    out << YAML::Flow << errors_node;
 
     out << YAML::EndMap;
     out << YAML::EndMap;

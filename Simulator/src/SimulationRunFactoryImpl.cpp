@@ -7,6 +7,7 @@
 
 #include <stdexcept>
 #include <utility>
+#include <iostream>
 
 namespace simulator {
 namespace types {
@@ -47,16 +48,15 @@ SimulationRunFactoryImpl::create(const types::SimulationConfigData& simulation,
     
     // Create output map with same physical size but possibly different resolution.
     PhysicalLength res = simulation.map_resolution * mission.output_mapping_resolution_factor;
-    
     auto sx = static_cast<std::size_t>(std::ceil((mission.mission_bounds.max_x - mission.mission_bounds.min_x).numerical_value_in(cm) / res.numerical_value_in(cm)));
     auto sy = static_cast<std::size_t>(std::ceil((mission.mission_bounds.max_y - mission.mission_bounds.min_y).numerical_value_in(cm) / res.numerical_value_in(cm)));
     auto sz = static_cast<std::size_t>(std::ceil((mission.mission_bounds.max_height - mission.mission_bounds.min_height).numerical_value_in(cm) / res.numerical_value_in(cm)));
 
     std::vector<std::size_t> shape{sx, sy, sz};
-    auto output_npy = std::make_shared<NpyArray>(shape, sizeof(int), NpyArray::GetTypeChar(typeid(int)), false);
+    auto output_npy = std::make_shared<NpyArray>(shape, sizeof(char), NpyArray::GetTypeChar(typeid(char)), false);
     output_npy->Allocate(); //allocates memory for a map
-    int* data = output_npy->Data<int>();
-    std::fill(data, data + output_npy->NumValue(), static_cast<int>(types::VoxelOccupancy::Unmapped));
+    char* data = output_npy->Data<char>();
+    std::fill(data, data + output_npy->NumValue(), static_cast<char>(types::VoxelOccupancy::Unmapped));
 
     types::MapConfig out_config{
         mission.mission_bounds,
