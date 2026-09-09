@@ -1,0 +1,16 @@
+change using namespace common in MockGPS.h to smaller import to prevent namespace pollution
+very weird usings in include/Simulator in general
+
+more indicative method names in Map3DImpl.cpp
+
+Maybe can divide compare in MapsComparison.cpp into smaller functions
+
+Build:
+cmake --preset default
+cmake --build --preset default
+
+Comparative run:
+./build/default/Simulator/simulator_330371063_324976703 -comparative simulation=inputs/sim_compose.yaml mission_control_folder=build/default/MissionControl algorithm=build/default/Algorithm/Algorithm_Simple_330371063_324976703.so
+
+Competitive run:
+./build/default/Simulator/simulator_330371063_324976703 -competition simulation=inputs/sim_compose.yaml mission_control=build/default/MissionControl/MissionControl_330371063_324976703.so algorithms_folder=build/default/Algorithm

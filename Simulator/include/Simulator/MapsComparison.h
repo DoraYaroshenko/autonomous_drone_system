@@ -18,7 +18,7 @@ using namespace user_common_330371063_324976703;
 class MapsComparison {
 public:
     [[nodiscard]] static std::vector<double> compare(const IMap3D& origin,
-                                                     const std::vector<IMap3D*> targets); //currently should work with at least 1 target
+                                                     const std::vector<IMap3D*> targets);
 };
 
 

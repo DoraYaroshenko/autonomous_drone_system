@@ -1,4 +1,5 @@
 #include <Simulator/MockLidar.h>
+#include <UserCommon/OrientationUtils.h>
 
 #include <mp-units/systems/si/math.h>
 
@@ -51,10 +52,7 @@ types::LidarScanResult MockLidar::scan(Orientation scan_orientation) const {
     }
 
     const Orientation sensor_heading = gps_.heading();
-    const Orientation center_beam_abs{
-        scan_orientation.horizontal + sensor_heading.horizontal,
-        scan_orientation.altitude + sensor_heading.altitude,
-    };
+    const Orientation center_beam_abs = ::user_common_330371063_324976703::OrientationUtils::addOrientations(scan_orientation, sensor_heading);
 
     const PhysicalLength center_distance = traceBeam(center_beam_abs);
     results.push_back(types::LidarHit{center_distance, scan_orientation});
@@ -72,14 +70,8 @@ types::LidarScanResult MockLidar::scan(Orientation scan_orientation) const {
                 horizontal_delta(horizontal_offset, config_.z_min),
                 altitude_delta(altitude_offset, config_.z_min),
             };
-            const Orientation relative_beam{
-                scan_orientation.horizontal + offset.horizontal,
-                scan_orientation.altitude + offset.altitude,
-            };
-            const Orientation absolute_beam{
-                relative_beam.horizontal + sensor_heading.horizontal,
-                relative_beam.altitude + sensor_heading.altitude,
-            };
+            const Orientation relative_beam = ::user_common_330371063_324976703::OrientationUtils::addOrientations(scan_orientation, offset);
+            const Orientation absolute_beam = ::user_common_330371063_324976703::OrientationUtils::addOrientations(relative_beam, sensor_heading);
             const PhysicalLength distance = traceBeam(absolute_beam);
             results.push_back(types::LidarHit{distance, relative_beam});
         }
@@ -90,10 +82,7 @@ types::LidarScanResult MockLidar::scan(Orientation scan_orientation) const {
 
 PhysicalLength MockLidar::traceBeam(const Orientation& beam_orientation) const {
     const Position3D origin = gps_.position();
-    const auto cos_altitude = si::cos(beam_orientation.altitude);
-    const auto dx = cos_altitude * si::cos(beam_orientation.horizontal);
-    const auto dy = cos_altitude * si::sin(beam_orientation.horizontal);
-    const auto dz = si::sin(beam_orientation.altitude);
+    ::user_common_330371063_324976703::Direction3D dir = ::user_common_330371063_324976703::OrientationUtils::getBeamDirection(beam_orientation);
 
     // step based on size of the map's resolution
     const PhysicalLength step = 0.1 * map_.getMapConfig().resolution;
@@ -101,15 +90,7 @@ PhysicalLength MockLidar::traceBeam(const Orientation& beam_orientation) const {
     for (PhysicalLength distance = 0.0 * cm; distance <= config_.z_max; distance += step) {
         // Computing target voxel position
         const double distance_cm = distance.force_numerical_value_in(cm);
-        const double dir_x = dx.force_numerical_value_in(mp::one);
-        const double dir_y = dy.force_numerical_value_in(mp::one);
-        const double dir_z = dz.force_numerical_value_in(mp::one);
-
-        const Position3D sample{
-            origin.x + dir_x * distance_cm * x_extent[cm],
-            origin.y + dir_y * distance_cm * y_extent[cm],
-            origin.z + dir_z * distance_cm * z_extent[cm],
-        };
+        const Position3D sample = ::user_common_330371063_324976703::OrientationUtils::pointAlongBeam(origin, dir, distance);
         if (map_.atVoxel(sample) == types::VoxelOccupancy::Occupied) {
             if (distance < config_.z_min) {
                 return 0.0 * cm;

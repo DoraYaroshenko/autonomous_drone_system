@@ -50,12 +50,12 @@ void Logger::logScan(double relative_h_angle_deg, double relative_v_angle_deg) {
                 << ", \"relative_v_angle_deg\": " << relative_v_angle_deg << "}\n";
 }
 
-void Logger::logVoxel(int x, int y, int z, int value) {
+void Logger::logVoxel(int x, int y, int z, common::types::VoxelOccupancy occupancy) {
     if (!out_stream_.is_open()) return;
 
     out_stream_ << "{\"type\": \"voxel\", \"step_id\": " << current_step_id_ 
                 << ", \"x\": " << x << ", \"y\": " << y << ", \"z\": " << z 
-                << ", \"value\": " << value << "}\n";
+                << ", \"value\": " << static_cast<int>(occupancy) << "}\n";
 }
 
 

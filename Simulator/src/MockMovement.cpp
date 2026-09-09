@@ -16,31 +16,22 @@ void checkMoveSafety(const IMap3D& map, const Position3D& pos, PhysicalLength ra
     }
     
     PhysicalLength res = map.getMapConfig().resolution;
-    PhysicalLength step = (res / 2.0 < PhysicalLength(1.0 * cm)) ? PhysicalLength(1.0 * cm) : (res / 2.0);
 
-    auto r_sq = radius * radius;
-
-    for (PhysicalLength dx = -radius; dx <= radius; dx += step) {
-        for (PhysicalLength dy = -radius; dy <= radius; dy += step) {
-            for (PhysicalLength dz = -radius; dz <= radius; dz += step) {
-                if ((dx*dx + dy*dy + dz*dz) > r_sq) continue;
-
-                // Explicitly converting to specific extent lengths is necessary here
-                Position3D p{
-                    pos.x + XLength(dx),
-                    pos.y + YLength(dy),
-                    pos.z + ZLength(dz)
-                };
-                
-                if (map.isInBounds(p)) {
-                    auto v = map.atVoxel(p);
-                    if (v == common::types::VoxelOccupancy::Occupied || 
-                        v == common::types::VoxelOccupancy::PotentiallyOccupied) {
-                        throw std::runtime_error("Collision detected: Drone hit a wall");
-                    }
-                }
+    bool collided = false;
+    user_common_330371063_324976703::CollisionUtils::forEachVoxelInDroneSphere(pos, radius, res, [&](const Position3D& p) {
+        if (map.isInBounds(p)) {
+            auto v = map.atVoxel(p);
+            if (v == common::types::VoxelOccupancy::Occupied || 
+                v == common::types::VoxelOccupancy::PotentiallyOccupied) {
+                collided = true;
+                return false; // Stop iteration
             }
         }
+        return true; // Continue iteration
+    });
+
+    if (collided) {
+        throw std::runtime_error("Collision detected: Drone hit a wall");
     }
 }
 } // namespace

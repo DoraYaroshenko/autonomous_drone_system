@@ -2,6 +2,9 @@
 
 #include <Common/MissionControlFactory.h>
 #include <vector>
+#include <mutex>
+#include <unordered_map>
+#include <thread>
 
 namespace simulator {
 
@@ -13,15 +16,18 @@ public:
     }
 
     void registerFactory(common::MissionControlFactory factory) {
-        factories_.push_back(std::move(factory));
+        std::lock_guard<std::mutex> lock(mtx_);
+        factories_[std::this_thread::get_id()].push_back(std::move(factory));
     }
 
-    const std::vector<common::MissionControlFactory>& getFactories() const {
-        return factories_;
+    std::vector<common::MissionControlFactory> getFactories() {
+        std::lock_guard<std::mutex> lock(mtx_);
+        return factories_[std::this_thread::get_id()];
     }
 
     void clear() {
-        factories_.clear();
+        std::lock_guard<std::mutex> lock(mtx_);
+        factories_.erase(std::this_thread::get_id());
     }
 
 private:
@@ -30,7 +36,8 @@ private:
     MissionControlRegistrar(const MissionControlRegistrar&) = delete;
     MissionControlRegistrar& operator=(const MissionControlRegistrar&) = delete;
 
-    std::vector<common::MissionControlFactory> factories_;
+    std::mutex mtx_;
+    std::unordered_map<std::thread::id, std::vector<common::MissionControlFactory>> factories_;
 };
 
 } // namespace simulator

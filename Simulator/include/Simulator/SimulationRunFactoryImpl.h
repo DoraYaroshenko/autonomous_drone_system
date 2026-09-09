@@ -20,7 +20,8 @@ class SimulationRunFactoryImpl final : public ISimulationRunFactory {
 public:
     SimulationRunFactoryImpl(
         common::MappingAlgorithmFactory algo_factory,
-        common::MissionControlFactory mc_factory);
+        common::MissionControlFactory mc_factory,
+        bool is_verbose = false);
 
     [[nodiscard]] std::unique_ptr<ISimulationRun>
     create(const types::SimulationConfigData& simulation,
@@ -32,6 +33,7 @@ public:
 private:
     common::MappingAlgorithmFactory algo_factory_;
     common::MissionControlFactory mc_factory_;
+    bool is_verbose_;
 };
 
 

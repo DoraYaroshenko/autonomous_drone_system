@@ -34,8 +34,7 @@ std::vector<double> MapsComparison::compare(const IMap3D& original,
     YLength res_y(res.numerical_value_in(cm) * y_extent[cm]);
     XLength res_x(res.numerical_value_in(cm) * x_extent[cm]);
     
-    auto get_voxel_count = [](auto min_val, auto max_val, auto res_axis) {
-        // Convert to double only when necessary for calculation
+    auto get_voxel_count = [](auto min_val, auto max_val, auto res_axis) { //counts the number of voxels along one axis
         double diff_cm = (max_val - min_val).numerical_value_in(cm);
         double res_cm = res_axis.numerical_value_in(cm);
         return std::round(diff_cm / res_cm);

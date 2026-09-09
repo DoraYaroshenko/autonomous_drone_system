@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include <mutex>
 
 namespace simulator {
 
@@ -22,6 +23,7 @@ public:
 
 private:
     std::vector<void*> handles_;
+    std::mutex mtx_;
 };
 
 } // namespace simulator

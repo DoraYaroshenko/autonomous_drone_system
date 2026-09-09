@@ -1,4 +1,5 @@
 #include <UserCommon/ScanResultToVoxels.h>
+#include <UserCommon/OrientationUtils.h>
 
 #include <mp-units/systems/si/math.h>
 
@@ -15,39 +16,23 @@ namespace {
     return distance == 0.0 * cm;
 }
 
+//did lidar hit no obstacles at max possible distance
 [[nodiscard]] bool isMissDistance(PhysicalLength distance) {
     return distance.force_numerical_value_in(cm) == std::numeric_limits<double>::max();
 }
 
-// LidarHit angles are relative to the scan direction. The map update needs a
+// LidarHit angles are relative to the drone's heading. The map update needs a
 // world-facing beam direction, so we add the drone heading.
 [[nodiscard]] Orientation absoluteBeamOrientation(const Orientation& drone_heading,
                                                   const Orientation& relative_beam) {
-    return Orientation{
-        relative_beam.horizontal + drone_heading.horizontal,
-        relative_beam.altitude + drone_heading.altitude,
-    };
+    return OrientationUtils::addOrientations(relative_beam, drone_heading);
 }
 
-// Converts a distance along a beam into a world-space position. Could have been an external util and used with MockLidar.
 [[nodiscard]] Position3D pointAlongBeam(const Position3D& origin,
                                         const Orientation& beam_orientation,
                                         PhysicalLength distance) {
-    const auto cos_altitude = si::cos(beam_orientation.altitude);
-    const auto dx = cos_altitude * si::cos(beam_orientation.horizontal);
-    const auto dy = cos_altitude * si::sin(beam_orientation.horizontal);
-    const auto dz = si::sin(beam_orientation.altitude);
-
-    const double distance_cm = distance.force_numerical_value_in(cm);
-    const double dir_x = dx.force_numerical_value_in(mp::one);
-    const double dir_y = dy.force_numerical_value_in(mp::one);
-    const double dir_z = dz.force_numerical_value_in(mp::one);
-
-    return Position3D{
-        origin.x + dir_x * distance_cm * x_extent[cm],
-        origin.y + dir_y * distance_cm * y_extent[cm],
-        origin.z + dir_z * distance_cm * z_extent[cm],
-    };
+    Direction3D dir = OrientationUtils::getBeamDirection(beam_orientation);
+    return OrientationUtils::pointAlongBeam(origin, dir, distance);
 }
 
 // Evidence strength for conflicting writes to the same voxel.
@@ -83,6 +68,7 @@ void setIfStronger(IMutableMap3D& output_map,
 }
 
 // Walks a beam segment and applies the same observation to each sampled point.
+//if lidar hit something, need to mark the voxels before the hit as empty. if lidar returned 0, need to mark all voxels between 0 and z_min potentially occupied
 void markBeamSegment(IMutableMap3D& output_map,
                      const Position3D& scan_origin,
                      const Orientation& beam_orientation,
@@ -99,7 +85,7 @@ void markBeamSegment(IMutableMap3D& output_map,
     }
 }
 
-} // namespace
+} // anonynous namespace, that allows all the functions above be private for this file
 
 void ScanResultToVoxels::applyToMap(IMutableMap3D& output_map,
                                     const Position3D& scan_origin,
@@ -110,8 +96,7 @@ void ScanResultToVoxels::applyToMap(IMutableMap3D& output_map,
         return;
     }
 
-    // Use a sub-voxel step like MockLidar so we do not skip thin voxels along
-    // diagonal rays.
+    // Use a sub-voxel step like MockLidar so we do not skip thin voxels along diagonal rays.
     const PhysicalLength step = 0.1 * output_map.getMapConfig().resolution;
     if (step <= 0.0 * cm) {
         return;
@@ -121,8 +106,7 @@ void ScanResultToVoxels::applyToMap(IMutableMap3D& output_map,
         const Orientation beam_orientation = absoluteBeamOrientation(drone_heading, hit.angle);
 
         if (isZeroDistance(hit.distance)) {
-            // Distance 0 means the hit happened before z_min. The exact voxel
-            // is unknown, so mark the near segment as uncertain.
+            // Distance 0 means the hit happened before z_min. The exact voxel is unknown, so mark the near segment as uncertain.
             markBeamSegment(output_map,
                             scan_origin,
                             beam_orientation,
@@ -147,8 +131,7 @@ void ScanResultToVoxels::applyToMap(IMutableMap3D& output_map,
         }
 
         if (hit.distance > 0.0 * cm) {
-            // A normal hit proves the path before the hit is empty and the hit
-            // position itself is occupied.
+            // A normal hit proves the path before the hit is empty and the hit position itself is occupied.
             markBeamSegment(output_map,
                             scan_origin,
                             beam_orientation,

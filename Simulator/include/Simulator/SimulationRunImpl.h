@@ -38,8 +38,6 @@ public:
                       types::SimulationConfigData simulation_config,
                       types::MissionConfigData mission_config,
                       std::filesystem::path output_map_file);
-
-    // Changed: matches ISimulationRun's new simulation-level result.
     [[nodiscard]] types::SimulationResult run() override;
 
 private:
@@ -50,7 +48,6 @@ private:
     std::unique_ptr<ILidar> lidar_;
     std::unique_ptr<IMappingAlgorithm> mapping_algorithm_;
     std::unique_ptr<IMissionControl> mission_control_;
-    // Changed: retained so run() can return the configs and output path in SimulationResult.
     types::SimulationConfigData simulation_config_;
     types::MissionConfigData mission_config_;
     std::filesystem::path output_map_file_;

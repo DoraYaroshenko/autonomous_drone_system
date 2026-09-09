@@ -4,7 +4,6 @@ add_executable(simulator_330371063_324976703
     src/MockGPS.cpp
     src/MockMovement.cpp
     src/Map3DImpl.cpp
-    src/SimulationManager.cpp
     src/SimulationRunImpl.cpp
     src/SimulationRunFactoryImpl.cpp
     src/MappingAlgorithmRegistration.cpp
@@ -16,6 +15,8 @@ add_executable(simulator_330371063_324976703
     ../UserCommon/src/CollisionUtils.cpp
     ../UserCommon/src/ScanResultToVoxels.cpp
     ../UserCommon/src/Logger.cpp
+    ../UserCommon/src/TimeUtils.cpp
+    ../UserCommon/src/OrientationUtils.cpp
 )
 
 target_include_directories(simulator_330371063_324976703 PRIVATE

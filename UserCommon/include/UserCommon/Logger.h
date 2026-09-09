@@ -19,7 +19,7 @@ class Logger {
 public:
     static void init(const std::string& path);
     static void close();
-    static void setStep(std::size_t step_id);
+    static void setStep(std::size_t step_id); //sets current_step_id_
     
     static void logMovement(double x_cm, double y_cm, double z_cm, 
                             double h_angle_deg, double v_angle_deg, 
@@ -27,13 +27,13 @@ public:
                             
     static void logScan(double relative_h_angle_deg, double relative_v_angle_deg);
     
-    static void logVoxel(int x, int y, int z, int value);
+    static void logVoxel(int x, int y, int z, common::types::VoxelOccupancy occupancy);
 
 private:
-    static thread_local std::ofstream out_stream_;
+    static thread_local std::ofstream out_stream_; //output file stream
     static thread_local std::size_t current_step_id_;
 };
 
-
+//atomic - for primitive typesone shared variable. thread_local - each thread gets a copy, for big objects.
 
 } // namespace user_common_330371063_324976703

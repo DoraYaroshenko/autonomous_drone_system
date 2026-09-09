@@ -3,6 +3,9 @@
 #include <Common/MappingAlgorithmFactory.h>
 #include <vector>
 #include <string>
+#include <mutex>
+#include <unordered_map>
+#include <thread>
 
 namespace simulator {
 
@@ -14,15 +17,18 @@ public:
     }
 
     void registerFactory(common::MappingAlgorithmFactory factory) {
-        factories_.push_back(std::move(factory));
+        std::lock_guard<std::mutex> lock(mtx_);
+        factories_[std::this_thread::get_id()].push_back(std::move(factory));
     }
 
-    const std::vector<common::MappingAlgorithmFactory>& getFactories() const {
-        return factories_;
+    std::vector<common::MappingAlgorithmFactory> getFactories() {
+        std::lock_guard<std::mutex> lock(mtx_);
+        return factories_[std::this_thread::get_id()];
     }
 
     void clear() {
-        factories_.clear();
+        std::lock_guard<std::mutex> lock(mtx_);
+        factories_.erase(std::this_thread::get_id());
     }
 
 private:
@@ -31,7 +37,8 @@ private:
     MappingAlgorithmRegistrar(const MappingAlgorithmRegistrar&) = delete;
     MappingAlgorithmRegistrar& operator=(const MappingAlgorithmRegistrar&) = delete;
 
-    std::vector<common::MappingAlgorithmFactory> factories_;
+    std::mutex mtx_;
+    std::unordered_map<std::thread::id, std::vector<common::MappingAlgorithmFactory>> factories_; //in registrar the key is thread_id and the value is the factories of the libraries it loaded
 };
 
 } // namespace simulator

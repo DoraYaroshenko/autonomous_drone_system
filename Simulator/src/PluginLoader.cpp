@@ -22,7 +22,10 @@ bool PluginLoader::loadLibrary(const std::string& path) {
         return false;
     }
     
-    handles_.push_back(handle);
+    {
+        std::lock_guard<std::mutex> lock(mtx_);
+        handles_.push_back(handle);
+    }
     return true;
 }
 
